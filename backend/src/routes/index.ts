@@ -1,0 +1,27 @@
+import { Router } from 'express';
+import authRoutes        from '../modules/auth/auth.routes';
+import pensionerRoutes   from '../modules/pensioners/pensioner.routes';
+import paymentRoutes     from '../modules/payments/payment.routes';
+import gratuityRoutes    from '../modules/gratuity/gratuity.routes';
+import arrearRoutes      from '../modules/arrears/arrear.routes';
+import dashboardRoutes   from '../modules/dashboard/dashboard.routes';
+import reportRoutes      from '../modules/reports/report.routes';
+import userRoutes        from '../modules/users/user.routes';
+import workflowRoutes    from '../modules/workflow/workflow.routes';
+import settingsRoutes    from '../modules/settings/settings.routes';
+import { departmentRouter, designationRouter } from '../modules/departments/department.routes';
+
+const router = Router();
+router.use('/auth',         authRoutes);
+router.use('/pensioners',   pensionerRoutes);
+router.use('/payment-runs', paymentRoutes);
+router.use('/gratuity',     gratuityRoutes);
+router.use('/arrears',      arrearRoutes);
+router.use('/dashboard',    dashboardRoutes);
+router.use('/reports',      reportRoutes);
+router.use('/users',        userRoutes);
+router.use('/workflow',     workflowRoutes);
+router.use('/settings',     settingsRoutes);
+router.use('/departments',  departmentRouter);
+router.use('/designations', designationRouter);
+export default router;
