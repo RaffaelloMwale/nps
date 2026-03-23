@@ -10,6 +10,7 @@ import userRoutes        from '../modules/users/user.routes';
 import workflowRoutes    from '../modules/workflow/workflow.routes';
 import settingsRoutes    from '../modules/settings/settings.routes';
 import { departmentRouter, designationRouter } from '../modules/departments/department.routes';
+import importRoutes from '../modules/import/import.routes';
 
 const router = Router();
 router.use('/auth',         authRoutes);
@@ -23,5 +24,6 @@ router.use('/users',        userRoutes);
 router.use('/workflow',     workflowRoutes);
 router.use('/settings',     settingsRoutes);
 router.use('/departments',  departmentRouter);
+router.use('/import',       importRoutes);
 router.use('/designations', designationRouter);
 export default router;

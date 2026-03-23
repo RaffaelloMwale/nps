@@ -18,6 +18,7 @@ import DeceasedPage        from '../pages/deceased/DeceasedPage';
 import ReportsPage         from '../pages/reports/ReportsPage';
 import AdminPage           from '../pages/admin/AdminPage';
 import SettingsPage        from '../pages/settings/SettingsPage';
+import ImportPage          from '../pages/import/ImportPage';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
@@ -60,6 +61,7 @@ const router = createBrowserRouter([
       { path: 'reports',              element: <ReportsPage /> },
       { path: 'admin',                element: <RequireAdmin><AdminPage /></RequireAdmin> },
       { path: 'settings',             element: <RequireAdmin><SettingsPage /></RequireAdmin> },
+      { path: 'import',               element: <ImportPage /> },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },

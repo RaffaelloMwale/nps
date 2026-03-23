@@ -1,0 +1,328 @@
+import { Router, Response, NextFunction } from 'express';
+import multer from 'multer';
+import ExcelJS from 'exceljs';
+import { query } from '../../config/database';
+import { authenticate, AuthRequest } from '../../middlewares/auth.middleware';
+import { creatorOrAdmin } from '../../middlewares/rbac.middleware';
+import { success, badRequest } from '../../utils/responseHelper';
+
+const router = Router();
+router.use(authenticate);
+
+// ── Multer — memory storage ───────────────────────────────────
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.originalname.match(/\.(xlsx|xls)$/i)) cb(null, true);
+    else cb(new Error('Only Excel files (.xlsx, .xls) are accepted'));
+  },
+});
+
+// ── Helpers ───────────────────────────────────────────────────
+async function readRows(buffer: Buffer): Promise<ExcelJS.Row[]> {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer);
+  const ws = wb.worksheets[0];
+  if (!ws) throw new Error('Excel file has no worksheets');
+  const rows: ExcelJS.Row[] = [];
+  ws.eachRow((row, rowNum) => { if (rowNum > 2) rows.push(row); }); // skip header + example
+  return rows;
+}
+
+function cv(row: ExcelJS.Row, col: number): string {
+  const cell = row.getCell(col);
+  if (!cell.value && cell.value !== 0) return '';
+  if (cell.value instanceof Date) return cell.value.toISOString().slice(0, 10);
+  if (typeof cell.value === 'object' && 'text' in (cell.value as any))
+    return String((cell.value as any).text).trim();
+  return String(cell.value).trim();
+}
+
+function cn(row: ExcelJS.Row, col: number): number {
+  return parseFloat(cv(row, col).replace(/[^0-9.-]/g, '')) || 0;
+}
+
+function cd(row: ExcelJS.Row, col: number): string | null {
+  const cell = row.getCell(col);
+  if (!cell.value) return null;
+  if (cell.value instanceof Date) return cell.value.toISOString().slice(0, 10);
+  const s = String(cell.value).trim();
+  if (!s) return null;
+  const p = s.split(/[\/\-\.]/);
+  if (p.length === 3) {
+    if (p[0].length === 4) return `${p[0]}-${p[1].padStart(2,'0')}-${p[2].padStart(2,'0')}`;
+    return `${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`;
+  }
+  return null;
+}
+
+// ── Template generator helper ─────────────────────────────────
+function makeTemplate(wb: ExcelJS.Workbook, name: string,
+  headers: { col: string; width: number; example: string }[]) {
+  const ws = wb.addWorksheet(name);
+  const last = String.fromCharCode(64 + headers.length);
+
+  ws.mergeCells(`A1:${last}1`);
+  const inst = ws.getCell('A1');
+  inst.value = 'NPS Import Template — DO NOT change column headers · Delete this row and the example row before uploading · Dates format: YYYY-MM-DD';
+  inst.font  = { italic: true, color: { argb: 'FF92400E' }, size: 10 };
+  inst.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+  ws.getRow(1).height = 22;
+
+  const hRow = ws.getRow(2);
+  headers.forEach((h, i) => {
+    const c = hRow.getCell(i + 1);
+    c.value = h.col;
+    c.font  = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    c.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
+    c.alignment = { horizontal: 'center', vertical: 'middle' };
+    c.border = { bottom: { style: 'medium', color: { argb: 'FFC9A84C' } } };
+    ws.getColumn(i + 1).width = h.width;
+  });
+  hRow.height = 24;
+
+  const eRow = ws.getRow(3);
+  headers.forEach((h, i) => {
+    const c = eRow.getCell(i + 1);
+    c.value = h.example;
+    c.font  = { italic: true, color: { argb: 'FF64748B' }, size: 10 };
+    c.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// GET /api/import/template/:type
+// ══════════════════════════════════════════════════════════════
+router.get('/template/:type', creatorOrAdmin, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const wb = new ExcelJS.Workbook();
+    const { type } = req.params;
+
+    if (type === 'pensioners') {
+      makeTemplate(wb, 'Pensioners', [
+        { col:'pension_no',                  width:16, example:'PEN-2024-0001'        },
+        { col:'employee_no',                 width:14, example:'EMP-1001'             },
+        { col:'title',                       width:8,  example:'Mr'                  },
+        { col:'first_name',                  width:18, example:'John'                },
+        { col:'middle_name',                 width:14, example:'Banda'               },
+        { col:'last_name',                   width:18, example:'Chirwa'              },
+        { col:'gender',                      width:10, example:'male'                },
+        { col:'date_of_birth',               width:14, example:'1958-03-15'          },
+        { col:'national_id',                 width:14, example:'1001234567'          },
+        { col:'phone_primary',               width:16, example:'+265888123456'       },
+        { col:'email',                       width:24, example:'john@example.com'    },
+        { col:'department',                  width:28, example:'Ministry of Finance' },
+        { col:'designation_at_retirement',   width:30, example:'Principal Secretary' },
+        { col:'grade_at_retirement',         width:16, example:'P1'                 },
+        { col:'grade_at_first_appointment',  width:20, example:'P7'                 },
+        { col:'employment_type',             width:16, example:'permanent'           },
+        { col:'date_of_first_appointment',   width:22, example:'1985-01-10'          },
+        { col:'date_of_retirement',          width:18, example:'2023-03-15'          },
+        { col:'years_of_service',            width:16, example:'38.17'               },
+        { col:'monthly_pension',             width:20, example:'285000.00'           },
+        { col:'total_gratuity_due',          width:20, example:'10836450.00'         },
+        { col:'pre_retirement_gratuity_paid',width:24, example:'0.00'                },
+        { col:'pension_start_date',          width:18, example:'2023-04-01'          },
+        { col:'status',                      width:12, example:'active'              },
+        { col:'date_of_death',               width:14, example:''                    },
+        { col:'next_of_kin_name',            width:24, example:'Mary Chirwa'         },
+        { col:'next_of_kin_relation',        width:16, example:'Spouse'              },
+        { col:'next_of_kin_phone',           width:16, example:'+265999123456'       },
+        { col:'notes',                       width:30, example:''                    },
+      ]);
+    } else if (type === 'gratuity') {
+      makeTemplate(wb, 'Gratuity Payments', [
+        { col:'pension_no',       width:16, example:'PEN-2024-0001'   },
+        { col:'gratuity_type',    width:14, example:'full'            },
+        { col:'payment_date',     width:14, example:'2024-03-01'      },
+        { col:'amount_paid',      width:18, example:'10836450.00'     },
+        { col:'ifmis_trf_number', width:24, example:'IFMIS-2024-0001' },
+        { col:'is_partial',       width:10, example:'FALSE'           },
+        { col:'partial_reason',   width:30, example:''                },
+        { col:'notes',            width:30, example:''                },
+      ]);
+    } else if (type === 'arrears') {
+      makeTemplate(wb, 'Arrears', [
+        { col:'pension_no',    width:16, example:'PEN-2024-0001'           },
+        { col:'arrear_type',   width:18, example:'pension_gap'             },
+        { col:'description',   width:36, example:'Pension gap 3 months'   },
+        { col:'from_period',   width:14, example:'2023-01'                 },
+        { col:'to_period',     width:14, example:'2023-03'                 },
+        { col:'amount',        width:18, example:'855000.00'               },
+        { col:'status',        width:12, example:'paid'                    },
+        { col:'paid_amount',   width:18, example:'855000.00'               },
+        { col:'payment_date',  width:14, example:'2023-05-01'              },
+        { col:'payment_ref',   width:20, example:'REF-2023-0001'           },
+        { col:'notes',         width:30, example:''                        },
+      ]);
+    } else {
+      return badRequest(res, 'Unknown template type. Use: pensioners | gratuity | arrears');
+    }
+
+    res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition',`attachment; filename="NPS_Import_${type}.xlsx"`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (err) { next(err); }
+});
+
+// ══════════════════════════════════════════════════════════════
+// POST /api/import/preview/:type  — validate, return preview
+// ══════════════════════════════════════════════════════════════
+router.post('/preview/:type', creatorOrAdmin, upload.single('file'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) return badRequest(res, 'No file uploaded');
+    const rows = await readRows(req.file.buffer);
+    const { type } = req.params;
+    const preview: any[] = [];
+    const errors:  any[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowNum = i + 3;
+      const rowErrors: string[] = [];
+
+      if (type === 'pensioners') {
+        if (!cv(row,4))  rowErrors.push('first_name required');
+        if (!cv(row,6))  rowErrors.push('last_name required');
+        if (!cv(row,2))  rowErrors.push('employee_no required');
+        if (!cv(row,17)) rowErrors.push('date_of_first_appointment required');
+        if (cn(row,20) <= 0) rowErrors.push('monthly_pension must be > 0');
+        preview.push({
+          row: rowNum, errors: rowErrors,
+          pension_no: cv(row,1)||'(auto)',
+          full_name: `${cv(row,4)} ${cv(row,6)}`.trim(),
+          department: cv(row,12), designation: cv(row,13),
+          monthly_pension: cn(row,20), status: cv(row,24)||'active',
+        });
+      } else if (type === 'gratuity') {
+        if (!cv(row,1)) rowErrors.push('pension_no required');
+        if (cn(row,4)<=0) rowErrors.push('amount_paid must be > 0');
+        preview.push({
+          row: rowNum, errors: rowErrors,
+          pension_no: cv(row,1), gratuity_type: cv(row,2),
+          payment_date: cv(row,3), amount: cn(row,4), ifmis_trf: cv(row,5),
+        });
+      } else if (type === 'arrears') {
+        if (!cv(row,1)) rowErrors.push('pension_no required');
+        if (cn(row,6)<=0) rowErrors.push('amount must be > 0');
+        preview.push({
+          row: rowNum, errors: rowErrors,
+          pension_no: cv(row,1), arrear_type: cv(row,2),
+          description: cv(row,3), amount: cn(row,6), status: cv(row,7)||'pending',
+        });
+      }
+
+      if (rowErrors.length) errors.push({ row: rowNum, errors: rowErrors });
+    }
+
+    success(res, {
+      totalRows: rows.length,
+      validRows: preview.filter(r=>r.errors.length===0).length,
+      errorRows: errors.length,
+      preview:   preview.slice(0, 25),
+      allErrors: errors,
+    });
+  } catch (err) { next(err); }
+});
+
+// ══════════════════════════════════════════════════════════════
+// POST /api/import/upload/:type  — execute import
+// ══════════════════════════════════════════════════════════════
+router.post('/upload/:type', creatorOrAdmin, upload.single('file'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) return badRequest(res, 'No file uploaded');
+    const rows   = await readRows(req.file.buffer);
+    const { type } = req.params;
+    const userId = req.user!.userId;
+    let imported=0, skipped=0, failed=0;
+    const failures: {row:number;reason:string}[] = [];
+
+    if (type === 'pensioners') {
+      for (let i=0; i<rows.length; i++) {
+        const row=rows[i]; const rowNum=i+3;
+        try {
+          const fn=cv(row,4), ln=cv(row,6), en=cv(row,2);
+          if (!fn||!ln||!en) { skipped++; continue; }
+          const pno = cv(row,1) || `PEN-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+          const dup = await query(`SELECT id FROM nps.pensioners WHERE pension_no=$1 OR employee_no=$2`,[pno,en]);
+          if (dup.rows.length) { skipped++; continue; }
+          const st = ['active','deceased','suspended','terminated'].includes(cv(row,24).toLowerCase())
+                     ? cv(row,24).toLowerCase() : 'active';
+          await query(`INSERT INTO nps.pensioners
+            (pension_no,employee_no,title,first_name,middle_name,last_name,
+             gender,date_of_birth,national_id,phone_primary,email,
+             department_text,designation_at_retirement,grade_at_retirement,grade_at_first_appointment,
+             employment_type,date_of_first_appointment,date_of_retirement,years_of_service,
+             monthly_pension,total_gratuity_due,pre_retirement_gratuity_paid,pension_start_date,
+             status,date_of_death,deceased_on_entry,
+             next_of_kin_name,next_of_kin_relation,next_of_kin_phone,introduced_by,notes)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+                  $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)`,
+          [pno,en,cv(row,3)||null,fn,cv(row,5)||null,ln,
+           cv(row,7)||'male',cd(row,8),cv(row,9)||null,cv(row,10)||null,cv(row,11)||null,
+           cv(row,12)||null,cv(row,13)||null,cv(row,14)||null,cv(row,15)||null,
+           cv(row,16)||'permanent',cd(row,17),cd(row,18),cn(row,19)||null,
+           cn(row,20),cn(row,21),cn(row,22),cd(row,23),
+           st,cd(row,25),st==='deceased',
+           cv(row,26)||null,cv(row,27)||null,cv(row,28)||null,userId,cv(row,29)||null]);
+          imported++;
+        } catch(e:any) { failed++; failures.push({row:rowNum,reason:e.message?.slice(0,120)||'error'}); }
+      }
+
+    } else if (type === 'gratuity') {
+      for (let i=0; i<rows.length; i++) {
+        const row=rows[i]; const rowNum=i+3;
+        try {
+          const pno=cv(row,1), amt=cn(row,4);
+          if (!pno||amt<=0) { skipped++; continue; }
+          const pRes=await query(`SELECT id,total_gratuity_due FROM nps.pensioners WHERE pension_no=$1`,[pno]);
+          if (!pRes.rows[0]) { failures.push({row:rowNum,reason:`${pno} not found`}); failed++; continue; }
+          const ifmis=cv(row,5)||null;
+          const payDate=cv(row,3)||new Date().toISOString().slice(0,10);
+          await query(`INSERT INTO nps.gratuity_records
+            (gratuity_ref,pensioner_id,gratuity_type,claim_date,
+             total_gratuity_due_snapshot,amount_requested,is_partial,partial_reason,
+             status,created_by,paid_by,paid_at,payment_date,ifmis_trf_number,gratuity_received,notes)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,'paid',$9,$9,NOW()::timestamp,$10,$11,$12,$13)`,
+          [`GR-IMP-${Date.now()}-${rowNum}`,pRes.rows[0].id,cv(row,2)||'full',payDate,
+           pRes.rows[0].total_gratuity_due,amt,cv(row,6).toLowerCase()==='true',cv(row,7)||null,
+           userId,payDate,ifmis,!!ifmis,cv(row,8)||null]);
+          imported++;
+        } catch(e:any) { failed++; failures.push({row:rowNum,reason:e.message?.slice(0,120)||'error'}); }
+      }
+
+    } else if (type === 'arrears') {
+      for (let i=0; i<rows.length; i++) {
+        const row=rows[i]; const rowNum=i+3;
+        try {
+          const pno=cv(row,1), amt=cn(row,6);
+          if (!pno||amt<=0) { skipped++; continue; }
+          const pRes=await query(`SELECT id FROM nps.pensioners WHERE pension_no=$1`,[pno]);
+          if (!pRes.rows[0]) { failures.push({row:rowNum,reason:`${pno} not found`}); failed++; continue; }
+          const st=['pending','approved','paid','cancelled'].includes(cv(row,7).toLowerCase())
+                   ? cv(row,7).toLowerCase() : 'pending';
+          await query(`INSERT INTO nps.arrears
+            (arrear_ref,pensioner_id,arrear_type,description,from_period,to_period,
+             computed_amount,status,paid_amount,payment_date,payment_ref,created_by,notes)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [`ARR-IMP-${Date.now()}-${rowNum}`,pRes.rows[0].id,cv(row,2)||'other',cv(row,3),
+           cv(row,4)||null,cv(row,5)||null,amt,st,cn(row,8)||null,cd(row,9)||null,
+           cv(row,10)||null,userId,cv(row,11)||null]);
+          imported++;
+        } catch(e:any) { failed++; failures.push({row:rowNum,reason:e.message?.slice(0,120)||'error'}); }
+      }
+    } else {
+      return badRequest(res,'Unknown import type. Use: pensioners | gratuity | arrears');
+    }
+
+    success(res,{type,totalRows:rows.length,imported,skipped,failed,
+      failures:failures.slice(0,50),
+      message:`Import complete: ${imported} imported, ${skipped} skipped, ${failed} failed`});
+  } catch (err) { next(err); }
+});
+
+export default router;

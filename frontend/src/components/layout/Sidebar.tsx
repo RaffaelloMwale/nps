@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, CreditCard, Gift, AlertCircle,
   FileBarChart, Settings, LogOut, Skull, ShieldCheck,
-  KeyRound, ChevronUp, User
+  KeyRound, ChevronUp, User, Upload
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import api from '../../config/api';
@@ -48,6 +48,7 @@ export default function Sidebar() {
     { to: '/arrears',   icon: AlertCircle,     label: 'Arrears' },
     { to: '/deceased',  icon: Skull,           label: 'BTU' },
     { to: '/reports',   icon: FileBarChart,    label: 'Reports' },
+    { to: '/import',    icon: Upload,          label: 'Import Data' },
   ];
 
   const adminLinks = [
