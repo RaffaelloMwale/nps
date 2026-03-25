@@ -20,11 +20,25 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      useAuthStore.getState().clearAuth();
-      window.location.href = '/login';
+      const msg = err.response?.data?.message || '';
+
+      if (msg === 'SESSION_SUPERSEDED') {
+        // Another device/browser logged in — show a clear message
+        useAuthStore.getState().clearAuth();
+        toast.error(
+          'You have been logged out because your account was signed in on another device or browser.',
+          { duration: 6000, id: 'session-superseded' }
+        );
+        setTimeout(() => { window.location.href = '/login'; }, 1500);
+      } else {
+        useAuthStore.getState().clearAuth();
+        window.location.href = '/login';
+      }
+      return Promise.reject(err);
     }
+
     const msg = err.response?.data?.message || 'An error occurred';
-    if (err.response?.status !== 401) toast.error(msg);
+    toast.error(msg);
     return Promise.reject(err);
   }
 );

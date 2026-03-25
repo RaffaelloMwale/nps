@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { loginUser, changePassword } from './auth.service';
+import { loginUser, changePassword, logoutUser } from './auth.service';
 import { LoginSchema, ChangePasswordSchema } from './auth.schema';
 import { AuthRequest } from '../../middlewares/auth.middleware';
 import { success, badRequest } from '../../utils/responseHelper';
@@ -20,7 +20,15 @@ export async function login(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-export async function logout(_req: Request, res: Response) {
+export async function logout(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    // Clear the session token from DB — invalidates the JWT immediately
+    if ((req as AuthRequest).user?.userId) {
+      await logoutUser((req as AuthRequest).user!.userId);
+    }
+  } catch (err) {
+    // Non-fatal — still log out
+  }
   res.clearCookie('refreshToken');
   success(res, null, 'Logged out successfully');
 }

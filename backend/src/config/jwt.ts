@@ -6,10 +6,11 @@ const ACCESS_EXPIRY  = process.env.JWT_EXPIRES_IN      || '8h';
 const REFRESH_EXPIRY = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 
 export interface JwtPayload {
-  userId: string;
-  username: string;
-  role: string;
-  fullName: string;
+  userId:       string;
+  username:     string;
+  role:         string;
+  fullName:     string;
+  sessionToken?: string;   // embedded at login; checked on every request
 }
 
 export function signAccessToken(payload: JwtPayload): string {
