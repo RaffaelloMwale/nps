@@ -12,6 +12,7 @@ import PaymentRunListPage   from '../pages/payments/PaymentRunListPage';
 import PaymentRunDetailPage from '../pages/payments/PaymentRunDetailPage';
 import GratuityListPage    from '../pages/gratuity/GratuityListPage';
 import GratuityFormPage    from '../pages/gratuity/GratuityFormPage';
+import GratuityDetailPage  from '../pages/gratuity/GratuityDetailPage';
 import ArrearListPage      from '../pages/arrears/ArrearListPage';
 import ArrearFormPage      from '../pages/arrears/ArrearFormPage';
 import DeceasedPage        from '../pages/deceased/DeceasedPage';
@@ -54,7 +55,7 @@ const router = createBrowserRouter([
       { path: 'payments/:id',         element: <PaymentRunDetailPage /> },
       { path: 'gratuity',             element: <GratuityListPage /> },
       { path: 'gratuity/new',         element: <GratuityFormPage /> },
-      { path: 'gratuity/:id',         element: <Placeholder title="Gratuity Detail" /> },
+      { path: 'gratuity/:id',         element: <GratuityDetailPage /> },
       { path: 'arrears',              element: <ArrearListPage /> },
       { path: 'arrears/new',          element: <ArrearFormPage /> },
       { path: 'deceased',             element: <DeceasedPage /> },

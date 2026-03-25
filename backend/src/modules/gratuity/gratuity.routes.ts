@@ -228,14 +228,36 @@ router.get('/:id', anyRole, async (req: AuthRequest, res: Response, next: NextFu
   try {
     const res2 = await query(
       `SELECT gr.*,
-              CONCAT(p.first_name,' ',p.last_name) AS pensioner_name,
-              p.pension_no, p.pre_retirement_gratuity_paid,
+              -- Pensioner details
+              p.pension_no, p.employee_no,
+              CONCAT(COALESCE(p.title||' ',''), p.first_name, ' ', p.last_name) AS pensioner_name,
+              p.gender, p.date_of_birth, p.national_id, p.phone_primary, p.email,
+              p.department_text         AS department_name,
+              p.designation_at_retirement,
+              p.grade_at_retirement,
+              p.date_of_retirement,
+              p.monthly_pension,
+              p.total_gratuity_due      AS pensioner_total_gratuity_due,
+              p.pre_retirement_gratuity_paid,
+              p.pension_start_date,
+              p.status                  AS pensioner_status,
+              p.id                      AS pensioner_uuid,
+              -- Bank account (primary)
+              ba.bank_name, ba.branch_name,
+              ba.account_number, ba.account_name, ba.account_type,
+              -- Gratuity balance
+              gb.total_gratuity_paid    AS gb_total_paid,
+              gb.gratuity_balance_remaining AS gb_balance,
+              -- User names
               u1.full_name AS created_by_name,
               u2.full_name AS approved_by_1_name,
               u3.full_name AS approved_by_2_name,
               u4.full_name AS paid_by_name
        FROM nps.gratuity_records gr
        JOIN nps.pensioners p ON gr.pensioner_id = p.id
+       LEFT JOIN nps.bank_accounts ba
+         ON ba.pensioner_id = p.id AND ba.is_primary = TRUE AND ba.is_active = TRUE
+       LEFT JOIN nps.v_gratuity_balance gb ON gb.pensioner_id = p.id
        LEFT JOIN nps.system_users u1 ON gr.created_by   = u1.id
        LEFT JOIN nps.system_users u2 ON gr.approved_by_1 = u2.id
        LEFT JOIN nps.system_users u3 ON gr.approved_by_2 = u3.id
